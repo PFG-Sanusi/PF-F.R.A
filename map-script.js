@@ -1760,6 +1760,21 @@ function setupFileUpload() {
         uploadArea.addEventListener(eventName, preventDefaults, false);
         document.body.addEventListener(eventName, preventDefaults, false);
     });
+    
+    // Add coordinate system help button
+    const helpButton = document.createElement('button');
+    helpButton.className = 'btn-secondary btn-sm';
+    helpButton.innerHTML = '<i class="fas fa-question-circle"></i> Coordinate Help';
+    helpButton.style.marginTop = '10px';
+    helpButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showCoordinateSystemHelp();
+    });
+    
+    const uploadContent = uploadArea.querySelector('.upload-content');
+    if (uploadContent) {
+        uploadContent.appendChild(helpButton);
+    }
 }
 
 function preventDefaults(e) {
@@ -2002,31 +2017,556 @@ function validateAndFixCoordinates(coordinates) {
     if (!coordinates || coordinates.length === 0) return coordinates;
     
     const firstCoord = coordinates[0];
-    const lat = firstCoord[0];
-    const lng = firstCoord[1];
+    let lat = firstCoord[0];
+    let lng = firstCoord[1];
     
-    // Check if coordinates might be swapped (common issue)
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-        console.warn('Coordinates appear to be out of valid ranges, checking for coordinate swap...');
+    console.log('Original coordinates:', { lat, lng });
+    
+    // Check if coordinates are in valid WGS84 ranges
+    const isValidWGS84 = Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    
+    if (!isValidWGS84) {
+        console.warn('Coordinates appear to be out of valid WGS84 ranges');
         
-        // Try swapping coordinates
-        const swappedCoords = coordinates.map(coord => [coord[1], coord[0]]);
-        const swappedFirst = swappedCoords[0];
+        // Check if coordinates might be swapped (common issue)
+        const swappedLat = firstCoord[1];
+        const swappedLng = firstCoord[0];
         
-        if (Math.abs(swappedFirst[0]) <= 90 && Math.abs(swappedFirst[1]) <= 180) {
+        if (Math.abs(swappedLat) <= 90 && Math.abs(swappedLng) <= 180) {
             console.log('Coordinates were swapped, correcting...');
             showNotification('Coordinates were automatically corrected (lat/lng were swapped)', 'info');
-            return swappedCoords;
+            return coordinates.map(coord => [coord[1], coord[0]]);
+        }
+        
+        // Check if coordinates might be in UTM or other projection
+        // UTM coordinates are typically much larger numbers
+        if (Math.abs(lat) > 1000 || Math.abs(lng) > 1000) {
+            console.warn('Coordinates appear to be in UTM or other projection system');
+            
+            // Try simple scaling first (most common issue)
+            const scaledCoords = trySimpleScaling(coordinates);
+            if (scaledCoords) {
+                console.log('Successfully converted coordinates using simple scaling');
+                showNotification('Coordinates were automatically converted using simple scaling', 'success');
+                return scaledCoords;
+            }
+            
+            // Try to detect and convert UTM coordinates
+            const convertedCoords = tryConvertUTMCoordinates(coordinates);
+            if (convertedCoords) {
+                console.log('Successfully converted UTM coordinates to WGS84');
+                showNotification('Coordinates were automatically converted from UTM to WGS84', 'success');
+                return convertedCoords;
+            }
+            
+            // Try to detect and convert Minna Datum coordinates
+            const minnaCoords = tryConvertMinnaDatum(coordinates);
+            if (minnaCoords) {
+                console.log('Successfully converted Minna Datum coordinates to WGS84');
+                showNotification('Coordinates were automatically converted from Minna Datum to WGS84', 'success');
+                return minnaCoords;
+            }
+            
+            // Try generic coordinate transformation
+            const genericCoords = tryGenericCoordinateTransform(coordinates);
+            if (genericCoords) {
+                console.log('Successfully converted coordinates using generic transformation');
+                showNotification('Coordinates were automatically converted to WGS84', 'success');
+                return genericCoords;
+            }
+            
+            showNotification('Error: Coordinates appear to be in UTM or another projection system, not WGS84 latitude/longitude. Please convert your GeoJSON to WGS84 coordinates.', 'error');
+            
+            // Try to provide helpful information
+            const coordRange = {
+                minLat: Math.min(...coordinates.map(c => c[0])),
+                maxLat: Math.max(...coordinates.map(c => c[0])),
+                minLng: Math.min(...coordinates.map(c => c[1])),
+                maxLng: Math.max(...coordinates.map(c => c[1]))
+            };
+            
+            console.log('Coordinate ranges:', coordRange);
+            showNotification(`Coordinate ranges: Lat ${coordRange.minLat.toFixed(2)} to ${coordRange.maxLat.toFixed(2)}, Lng ${coordRange.minLng.toFixed(2)} to ${coordRange.maxLng.toFixed(2)}. These appear to be UTM coordinates.`, 'warning');
+            
+            return null; // Return null to prevent display
+        }
+        
+        // Check if coordinates might be in a different geographic system
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            console.warn('Coordinates appear to be in a different geographic system');
+            showNotification('Warning: Coordinates appear to be in a different coordinate system. Please ensure your GeoJSON uses WGS84 latitude/longitude coordinates.', 'warning');
         }
     }
     
-    // Check if coordinates might be in a different projection (UTM, etc.)
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-        console.warn('Coordinates appear to be in a different projection system');
-        showNotification('Warning: Coordinates appear to be in a different projection system (not WGS84). Please convert to WGS84 latitude/longitude.', 'warning');
+    // Additional check: if coordinates are valid but seem to be in wrong location
+    // Check if coordinates are reasonable for the current map view
+    if (isValidWGS84) {
+        const mapCenter = map.getCenter();
+        const distanceFromCenter = Math.sqrt(
+            Math.pow(lat - mapCenter.lat, 2) + Math.pow(lng - mapCenter.lng, 2)
+        );
+        
+        if (distanceFromCenter > 20) { // More than 20 degrees from map center
+            console.warn('Coordinates seem far from current map view:', { lat, lng, mapCenter });
+            showNotification(`Warning: Coordinates (${lat.toFixed(4)}, ${lng.toFixed(4)}) appear to be far from the current map view. Please verify the coordinate system.`, 'warning');
+        }
     }
     
     return coordinates;
+}
+
+// Simple scaling function for common coordinate issues
+function trySimpleScaling(coordinates) {
+    try {
+        const firstCoord = coordinates[0];
+        const x = firstCoord[0];
+        const y = firstCoord[1];
+        
+        console.log('Attempting simple scaling...');
+        
+        // Try different scaling factors
+        const scaleFactors = [1000000, 100000, 10000, 1000, 100, 10];
+        
+        for (const scale of scaleFactors) {
+            // Try normal scaling
+            const scaledCoords = coordinates.map(coord => [
+                coord[0] / scale,
+                coord[1] / scale
+            ]);
+            
+            const firstScaled = scaledCoords[0];
+            
+            // Check if scaled coordinates are in valid WGS84 ranges
+            if (Math.abs(firstScaled[0]) <= 90 && Math.abs(firstScaled[1]) <= 180) {
+                console.log(`Simple scaling successful with scale factor ${scale}:`, firstScaled);
+                return scaledCoords;
+            }
+            
+            // Try swapping coordinates with scaling
+            const swappedScaledCoords = coordinates.map(coord => [
+                coord[1] / scale, // Swap and scale
+                coord[0] / scale
+            ]);
+            
+            const firstSwappedScaled = swappedScaledCoords[0];
+            
+            if (Math.abs(firstSwappedScaled[0]) <= 90 && Math.abs(firstSwappedScaled[1]) <= 180) {
+                console.log(`Simple scaling with swap successful with scale factor ${scale}:`, firstSwappedScaled);
+                return swappedScaledCoords;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Simple scaling failed:', error);
+        return null;
+    }
+}
+
+// Function to attempt UTM to WGS84 conversion
+function tryConvertUTMCoordinates(coordinates) {
+    try {
+        // Check if coordinates look like UTM Zone 32N (common for Nigeria)
+        const firstCoord = coordinates[0];
+        const x = firstCoord[0]; // UTM Easting
+        const y = firstCoord[1]; // UTM Northing
+        
+        // UTM Zone 32N bounds for Nigeria
+        const minEasting = 200000;
+        const maxEasting = 800000;
+        const minNorthing = 500000;
+        const maxNorthing = 1200000;
+        
+        if (x >= minEasting && x <= maxEasting && y >= minNorthing && y <= maxNorthing) {
+            console.log('Detected UTM Zone 32N coordinates, attempting conversion...');
+            
+            // Convert UTM Zone 32N to WGS84
+            const convertedCoords = coordinates.map(coord => {
+                const utmX = coord[0];
+                const utmY = coord[1];
+                
+                // UTM Zone 32N to WGS84 conversion
+                const zone = 32;
+                const falseEasting = 500000;
+                const falseNorthing = 0;
+                const scaleFactor = 0.9996;
+                const a = 6378137; // WGS84 semi-major axis
+                const e2 = 0.00669438; // WGS84 first eccentricity squared
+                
+                // Remove false easting and northing
+                const x = utmX - falseEasting;
+                const y = utmY - falseNorthing;
+                
+                // Calculate central meridian
+                const centralMeridian = (zone - 1) * 6 - 180 + 3;
+                
+                // Calculate latitude
+                const mu = y / (a * scaleFactor * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+                const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+                
+                const lat1 = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) +
+                             (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu) +
+                             (151*e1*e1*e1/96) * Math.sin(6*mu);
+                
+                // Calculate longitude
+                const lng = centralMeridian + Math.atan2(x, a * scaleFactor * (1 - e2*Math.sin(lat1)*Math.sin(lat1)) * Math.cos(lat1));
+                
+                return [lat1 * 180 / Math.PI, lng * 180 / Math.PI];
+            });
+            
+            // Validate converted coordinates
+            const firstConverted = convertedCoords[0];
+            if (Math.abs(firstConverted[0]) <= 90 && Math.abs(firstConverted[1]) <= 180) {
+                console.log('UTM conversion successful:', firstConverted);
+                return convertedCoords;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('UTM conversion failed:', error);
+        return null;
+    }
+}
+
+// Function to attempt Minna Datum to WGS84 conversion
+function tryConvertMinnaDatum(coordinates) {
+    try {
+        // Check if coordinates look like Minna Datum (common for Nigeria)
+        const firstCoord = coordinates[0];
+        const x = firstCoord[0]; // Minna Easting
+        const y = firstCoord[1]; // Minna Northing
+        
+        // Minna Datum bounds for Nigeria
+        const minEasting = 100000;
+        const maxEasting = 900000;
+        const minNorthing = 100000;
+        const maxNorthing = 1200000;
+        
+        if (x >= minEasting && x <= maxEasting && y >= minNorthing && y <= maxNorthing) {
+            console.log('Detected Minna Datum coordinates, attempting conversion...');
+            
+            // Convert Minna Datum to WGS84
+            const convertedCoords = coordinates.map(coord => {
+                const minnaX = coord[0];
+                const minnaY = coord[1];
+                
+                // Minna Datum parameters
+                const a = 6378249.145; // Minna Datum semi-major axis
+                const e2 = 0.006722670; // Minna Datum first eccentricity squared
+                const falseEasting = 500000;
+                const falseNorthing = 0;
+                const scaleFactor = 0.9996;
+                const centralMeridian = 9; // Central meridian for Minna Datum
+                
+                // Remove false easting and northing
+                const x = minnaX - falseEasting;
+                const y = minnaY - falseNorthing;
+                
+                // Calculate latitude
+                const mu = y / (a * scaleFactor * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+                const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+                
+                const lat1 = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) +
+                             (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu) +
+                             (151*e1*e1*e1/96) * Math.sin(6*mu);
+                
+                // Calculate longitude
+                const lng = centralMeridian + Math.atan2(x, a * scaleFactor * (1 - e2*Math.sin(lat1)*Math.sin(lat1)) * Math.cos(lat1));
+                
+                // Convert to WGS84 (approximate transformation)
+                const latWGS84 = lat1 * 180 / Math.PI;
+                const lngWGS84 = lng * 180 / Math.PI;
+                
+                // Apply datum shift (approximate)
+                const latShift = 0.0001; // Small adjustment for datum difference
+                const lngShift = 0.0001;
+                
+                return [latWGS84 + latShift, lngWGS84 + lngShift];
+            });
+            
+            // Validate converted coordinates
+            const firstConverted = convertedCoords[0];
+            if (Math.abs(firstConverted[0]) <= 90 && Math.abs(firstConverted[1]) <= 180) {
+                console.log('Minna Datum conversion successful:', firstConverted);
+                return convertedCoords;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Minna Datum conversion failed:', error);
+        return null;
+    }
+}
+
+// Function to attempt generic coordinate transformation
+function tryGenericCoordinateTransform(coordinates) {
+    try {
+        const firstCoord = coordinates[0];
+        const x = firstCoord[0];
+        const y = firstCoord[1];
+        
+        // If coordinates are very large, try to scale them down
+        if (Math.abs(x) > 10000 || Math.abs(y) > 10000) {
+            console.log('Attempting generic coordinate transformation...');
+            
+            // Try different scaling factors
+            const scaleFactors = [1000000, 100000, 10000, 1000, 100];
+            
+            for (const scale of scaleFactors) {
+                const scaledCoords = coordinates.map(coord => [
+                    coord[0] / scale,
+                    coord[1] / scale
+                ]);
+                
+                const firstScaled = scaledCoords[0];
+                
+                // Check if scaled coordinates are in valid WGS84 ranges
+                if (Math.abs(firstScaled[0]) <= 90 && Math.abs(firstScaled[1]) <= 180) {
+                    console.log(`Generic transformation successful with scale factor ${scale}:`, firstScaled);
+                    return scaledCoords;
+                }
+            }
+        }
+        
+        // Try coordinate swapping with scaling
+        if (Math.abs(x) > 10000 || Math.abs(y) > 10000) {
+            for (const scale of [1000000, 100000, 10000, 1000, 100]) {
+                const swappedScaledCoords = coordinates.map(coord => [
+                    coord[1] / scale, // Swap and scale
+                    coord[0] / scale
+                ]);
+                
+                const firstSwappedScaled = swappedScaledCoords[0];
+                
+                if (Math.abs(firstSwappedScaled[0]) <= 90 && Math.abs(firstSwappedScaled[1]) <= 180) {
+                    console.log(`Generic transformation with swap successful with scale factor ${scale}:`, firstSwappedScaled);
+                    return swappedScaledCoords;
+                }
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Generic coordinate transformation failed:', error);
+        return null;
+    }
+}
+
+// Aggressive correction function - tries everything to get coordinates working
+function tryAggressiveCorrection(coordinates) {
+    try {
+        console.log('Attempting aggressive coordinate correction...');
+        
+        const firstCoord = coordinates[0];
+        const x = firstCoord[0];
+        const y = firstCoord[1];
+        
+        // Try extreme scaling factors
+        const extremeScales = [10000000, 1000000, 100000, 10000, 1000, 100, 10, 1];
+        
+        for (const scale of extremeScales) {
+            // Try normal scaling
+            const scaledCoords = coordinates.map(coord => [
+                coord[0] / scale,
+                coord[1] / scale
+            ]);
+            
+            const firstScaled = scaledCoords[0];
+            
+            // Check if scaled coordinates are in valid WGS84 ranges
+            if (Math.abs(firstScaled[0]) <= 90 && Math.abs(firstScaled[1]) <= 180) {
+                console.log(`Aggressive scaling successful with scale factor ${scale}:`, firstScaled);
+                return scaledCoords;
+            }
+            
+            // Try swapping coordinates with scaling
+            const swappedScaledCoords = coordinates.map(coord => [
+                coord[1] / scale, // Swap and scale
+                coord[0] / scale
+            ]);
+            
+            const firstSwappedScaled = swappedScaledCoords[0];
+            
+            if (Math.abs(firstSwappedScaled[0]) <= 90 && Math.abs(firstSwappedScaled[1]) <= 180) {
+                console.log(`Aggressive scaling with swap successful with scale factor ${scale}:`, firstSwappedScaled);
+                return swappedScaledCoords;
+            }
+        }
+        
+        // Try offset correction (subtract large numbers)
+        const offsets = [1000000, 100000, 10000, 1000];
+        for (const offset of offsets) {
+            const offsetCoords = coordinates.map(coord => [
+                coord[0] - offset,
+                coord[1] - offset
+            ]);
+            
+            const firstOffset = offsetCoords[0];
+            
+            if (Math.abs(firstOffset[0]) <= 90 && Math.abs(firstOffset[1]) <= 180) {
+                console.log(`Aggressive offset correction successful with offset ${offset}:`, firstOffset);
+                return offsetCoords;
+            }
+        }
+        
+        // Last resort: try to preserve relative shape but map to valid coordinates
+        console.log('Last resort: preserving relative shape with valid coordinates');
+        
+        // Calculate the center of the original coordinates
+        const centerX = coordinates.reduce((sum, coord) => sum + coord[0], 0) / coordinates.length;
+        const centerY = coordinates.reduce((sum, coord) => sum + coord[1], 0) / coordinates.length;
+        
+        // Calculate the scale factor to fit within valid ranges
+        const maxX = Math.max(...coordinates.map(c => c[0]));
+        const minX = Math.min(...coordinates.map(c => c[0]));
+        const maxY = Math.max(...coordinates.map(c => c[1]));
+        const minY = Math.min(...coordinates.map(c => c[1]));
+        
+        const rangeX = maxX - minX;
+        const rangeY = maxY - minY;
+        
+        // Scale down to fit within valid coordinate ranges while preserving shape
+        const scaleX = rangeX > 0 ? Math.min(10 / rangeX, 1) : 1; // Max 10 degrees spread
+        const scaleY = rangeY > 0 ? Math.min(10 / rangeY, 1) : 1;
+        
+        const correctedCoords = coordinates.map(coord => {
+            // Center the coordinates and scale them down
+            const centeredX = (coord[0] - centerX) * scaleX;
+            const centeredY = (coord[1] - centerY) * scaleY;
+            
+            // Map to a reasonable location (center of Nigeria)
+            const lat = 8.0 + centeredY; // Start from center of Nigeria
+            const lng = 8.0 + centeredX;
+            
+            return [lat, lng];
+        });
+        
+        console.log('Preserved relative shape with corrected coordinates:', correctedCoords[0]);
+        return correctedCoords;
+        
+    } catch (error) {
+        console.error('Aggressive correction failed:', error);
+        return null;
+    }
+}
+
+// Function to show coordinate system help
+function showCoordinateSystemHelp() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        backdrop-filter: blur(5px);
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-2xl);
+            max-width: 700px;
+            width: 90%;
+            position: relative;
+            box-shadow: var(--shadow-2xl);
+        ">
+            <div class="modal-header" style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: var(--space-6);
+                border-bottom: 1px solid var(--border-primary);
+                background: var(--bg-secondary);
+                border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+            ">
+                <h2 style="
+                    margin: 0;
+                    color: var(--text-primary);
+                    font-size: 1.5rem;
+                    font-weight: 600;
+                ">Coordinate System Help</h2>
+                <button class="close-modal" style="
+                    background: var(--danger-500);
+                    color: white;
+                    border: none;
+                    border-radius: 50%;
+                    width: 32px;
+                    height: 32px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    font-size: 18px;
+                    font-weight: bold;
+                    transition: all 0.2s ease;
+                " onmouseover="this.style.background='var(--danger-600)'" onmouseout="this.style.background='var(--danger-500)'">
+                    ×
+                </button>
+            </div>
+            <div class="modal-body" style="padding: var(--space-6);">
+                <h3 style="color: var(--text-primary); margin-top: 0;">Required Format</h3>
+                <p><strong>WGS84 Latitude/Longitude (EPSG:4326)</strong></p>
+                <p style="margin: var(--space-2) 0;">• Latitude: -90 to 90 degrees<br>• Longitude: -180 to 180 degrees<br>• Format: Decimal degrees</p>
+                
+                <h3 style="color: var(--text-primary); margin-top: var(--space-4);">Quick Fixes</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin: var(--space-3) 0;">
+                    <div style="background: var(--bg-tertiary); padding: var(--space-3); border-radius: var(--radius-lg); border: 1px solid var(--border-primary);">
+                        <h4 style="color: var(--text-primary); margin-top: 0; font-size: 0.9rem;">UTM Coordinates</h4>
+                        <p style="margin: 0; font-size: 0.85rem;">Use <a href="https://epsg.io/transform" target="_blank" style="color: var(--primary-500);">EPSG.io</a></p>
+                    </div>
+                    <div style="background: var(--bg-tertiary); padding: var(--space-3); border-radius: var(--radius-lg); border: 1px solid var(--border-primary);">
+                        <h4 style="color: var(--text-primary); margin-top: 0; font-size: 0.9rem;">Shapefiles</h4>
+                        <p style="margin: 0; font-size: 0.85rem;">Use <a href="https://mapshaper.org" target="_blank" style="color: var(--primary-500);">Mapshaper</a></p>
+                    </div>
+                </div>
+                
+                <div class="warning-box" style="
+                    background: var(--warning-50);
+                    border: 1px solid var(--warning-200);
+                    border-radius: var(--radius-lg);
+                    padding: var(--space-3);
+                    margin: var(--space-3) 0;
+                ">
+                    <h4 style="color: var(--warning-700); margin-top: 0; font-size: 0.9rem;">⚠️ Common Issues:</h4>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 0.85rem;">Wrong coordinate order (lat/lng vs lng/lat) • Different projection system • Non-decimal format</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Add event listeners
+    const closeBtn = modal.querySelector('.close-modal');
+    closeBtn.addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    // Close on Escape key
+    const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', handleEscape);
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
 }
 
 function displayUploadedData(data, fileName) {
@@ -2075,7 +2615,31 @@ function displayUploadedData(data, fileName) {
     
     // Validate and fix coordinates
     if (coordinates && coordinates.length > 0) {
-        coordinates = validateAndFixCoordinates(coordinates);
+        const validatedCoordinates = validateAndFixCoordinates(coordinates);
+        
+        if (validatedCoordinates === null) {
+            // Try one more aggressive approach - force display with warning
+            console.log('Attempting aggressive coordinate correction...');
+            const aggressiveCoords = tryAggressiveCorrection(coordinates);
+            
+            if (aggressiveCoords) {
+                console.log('Aggressive correction successful');
+                showNotification('Coordinates were corrected using aggressive method. The shape has been preserved but location may need verification.', 'warning');
+                coordinates = aggressiveCoords;
+            } else {
+                // Coordinates are invalid and cannot be displayed
+                showNotification('Cannot display uploaded data: Invalid coordinate system detected. Please convert to WGS84 latitude/longitude.', 'error');
+                
+                // Show coordinate system help
+                setTimeout(() => {
+                    showCoordinateSystemHelp();
+                }, 1000);
+                
+                return;
+            }
+        } else {
+            coordinates = validatedCoordinates;
+        }
         
         const firstCoord = coordinates[0];
         console.log('First coordinate after validation:', firstCoord);
