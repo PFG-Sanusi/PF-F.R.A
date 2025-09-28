@@ -67,6 +67,18 @@ function throttle(func, limit) {
     };
 }
 
+// Performance optimization: RequestAnimationFrame throttle for smooth animations
+function rafThrottle(func) {
+    let rafId;
+    return function(...args) {
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+            func.apply(this, args);
+            rafId = null;
+        });
+    };
+}
+
 // Initialize map when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Cache DOM elements for better performance
@@ -74,10 +86,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize components with error handling
     try {
-        initializeMap();
-        setupEventListeners();
-        updateStats();
-        initializeAuth();
+    initializeMap();
+    setupEventListeners();
+    updateStats();
+    initializeAuth();
     } catch (error) {
         console.error('Initialization error:', error);
         showNotification('Failed to initialize map. Please refresh the page.', 'error');
@@ -177,13 +189,15 @@ function initializeMap() {
     map.on('zoomend', debounce(onZoomEnd, 300));
     
     // Add moveend event for performance monitoring
-    map.on('moveend', throttle(() => {
+    map.on('moveend', rafThrottle(() => {
         // Update stats when map moves
         if (currentPolygon) {
             updateAreaInfo(calculatePolygonArea(polygonPoints), calculatePolygonPerimeter(polygonPoints), polygonPoints);
         }
-    }, 500));
+    }));
+    
 }
+
 
 function addCustomControls() {
     // Add a custom control for drawing instructions
@@ -477,7 +491,7 @@ function onZoomEnd(e) {
 
 // Optimized polygon area calculation with caching
 const areaCalculationCache = new Map();
-
+    
 function calculatePolygonArea(points) {
     if (points.length < 3) return 0;
     
@@ -518,7 +532,12 @@ function calculatePolygonArea(points) {
     const areaKm2 = area * conversionFactor;
     
     // Cache the result (limit cache size to prevent memory issues)
-    if (areaCalculationCache.size < 100) {
+    if (areaCalculationCache.size < 50) {
+        areaCalculationCache.set(cacheKey, areaKm2);
+    } else {
+        // Clear oldest entries to prevent memory leaks
+        const keysToDelete = Array.from(areaCalculationCache.keys()).slice(0, 25);
+        keysToDelete.forEach(key => areaCalculationCache.delete(key));
         areaCalculationCache.set(cacheKey, areaKm2);
     }
     
@@ -567,8 +586,13 @@ function calculatePolygonPerimeter(points) {
     
     const perimeterKm = perimeter * 0.001; // Convert to kilometers
     
-    // Cache the result (limit cache size)
-    if (perimeterCalculationCache.size < 100) {
+    // Cache the result (limit cache size to prevent memory issues)
+    if (perimeterCalculationCache.size < 50) {
+        perimeterCalculationCache.set(cacheKey, perimeterKm);
+    } else {
+        // Clear oldest entries to prevent memory leaks
+        const keysToDelete = Array.from(perimeterCalculationCache.keys()).slice(0, 25);
+        keysToDelete.forEach(key => perimeterCalculationCache.delete(key));
         perimeterCalculationCache.set(cacheKey, perimeterKm);
     }
     
@@ -776,11 +800,30 @@ function showAnalysisPanel() {
     const panel = document.getElementById('analysisPanel');
     panel.classList.add('active');
     panel.style.display = 'flex';
+    
+    // Check if panel has scrollable content and add scroll listener
+    setTimeout(() => {
+        if (panel.scrollHeight > panel.clientHeight) {
+            panel.classList.add('scrollable');
+            
+            // Add scroll listener to show/hide gradient fade with throttling
+            const updateScrollIndicator = throttle(() => {
+                const isAtBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 10;
+                if (isAtBottom) {
+                    panel.classList.remove('scrollable');
+                } else {
+                    panel.classList.add('scrollable');
+                }
+            }, 16); // ~60fps
+            
+            panel.addEventListener('scroll', updateScrollIndicator);
+        }
+    }, 100);
 }
 
 function closeAnalysis() {
     const panel = document.getElementById('analysisPanel');
-    panel.classList.remove('active');
+    panel.classList.remove('active', 'scrollable');
     panel.style.display = 'none';
 }
 
@@ -2115,111 +2158,216 @@ function validateAndFixCoordinates(coordinates) {
     return coordinates;
 }
 
-// Simple scaling function for common coordinate issues
+// Enhanced coordinate detection and transformation
 function trySimpleScaling(coordinates) {
     try {
         const firstCoord = coordinates[0];
         const x = firstCoord[0];
         const y = firstCoord[1];
         
-        console.log('Attempting simple scaling...');
+        console.log('Attempting enhanced coordinate transformation...');
+        console.log('Original coordinates:', { x, y });
         
-        // Try different scaling factors
-        const scaleFactors = [1000000, 100000, 10000, 1000, 100, 10];
+        // Analyze coordinate patterns to determine likely system
+        const coordAnalysis = analyzeCoordinateSystem(coordinates);
+        console.log('Coordinate analysis:', coordAnalysis);
         
-        for (const scale of scaleFactors) {
-            // Try normal scaling
-            const scaledCoords = coordinates.map(coord => [
-                coord[0] / scale,
-                coord[1] / scale
-            ]);
-            
-            const firstScaled = scaledCoords[0];
-            
-            // Check if scaled coordinates are in valid WGS84 ranges
-            if (Math.abs(firstScaled[0]) <= 90 && Math.abs(firstScaled[1]) <= 180) {
-                console.log(`Simple scaling successful with scale factor ${scale}:`, firstScaled);
-                return scaledCoords;
-            }
-            
-            // Try swapping coordinates with scaling
-            const swappedScaledCoords = coordinates.map(coord => [
-                coord[1] / scale, // Swap and scale
-                coord[0] / scale
-            ]);
-            
-            const firstSwappedScaled = swappedScaledCoords[0];
-            
-            if (Math.abs(firstSwappedScaled[0]) <= 90 && Math.abs(firstSwappedScaled[1]) <= 180) {
-                console.log(`Simple scaling with swap successful with scale factor ${scale}:`, firstSwappedScaled);
-                return swappedScaledCoords;
+        // Try different transformation approaches based on analysis
+        const transformations = [
+            // Simple scaling
+            { name: 'Simple Scaling', func: () => tryScalingTransform(coordinates) },
+            // Coordinate swapping
+            { name: 'Coordinate Swap', func: () => trySwapTransform(coordinates) },
+            // Offset correction
+            { name: 'Offset Correction', func: () => tryOffsetTransform(coordinates) },
+            // Mixed transformations
+            { name: 'Mixed Transform', func: () => tryMixedTransform(coordinates) }
+        ];
+        
+        for (const transform of transformations) {
+            const result = transform.func();
+            if (result) {
+                console.log(`${transform.name} successful:`, result[0]);
+                return result;
             }
         }
         
         return null;
     } catch (error) {
-        console.error('Simple scaling failed:', error);
+        console.error('Enhanced coordinate transformation failed:', error);
         return null;
     }
+}
+
+// Analyze coordinate system to determine likely transformation needed
+function analyzeCoordinateSystem(coordinates) {
+    const firstCoord = coordinates[0];
+    const x = firstCoord[0];
+    const y = firstCoord[1];
+    
+    const analysis = {
+        isUTM: Math.abs(x) > 100000 && Math.abs(y) > 100000,
+        isProjected: Math.abs(x) > 1000 || Math.abs(y) > 1000,
+        isSwapped: Math.abs(x) <= 90 && Math.abs(y) <= 180,
+        hasOffset: Math.abs(x) > 1000000 || Math.abs(y) > 1000000,
+        range: {
+            minX: Math.min(...coordinates.map(c => c[0])),
+            maxX: Math.max(...coordinates.map(c => c[0])),
+            minY: Math.min(...coordinates.map(c => c[1])),
+            maxY: Math.max(...coordinates.map(c => c[1]))
+        }
+    };
+    
+    return analysis;
+}
+
+// Try scaling transformation
+function tryScalingTransform(coordinates) {
+    const scaleFactors = [10000000, 1000000, 100000, 10000, 1000, 100, 10];
+    
+    for (const scale of scaleFactors) {
+        const scaledCoords = coordinates.map(coord => [
+            coord[0] / scale,
+            coord[1] / scale
+        ]);
+        
+        const firstScaled = scaledCoords[0];
+        if (Math.abs(firstScaled[0]) <= 90 && Math.abs(firstScaled[1]) <= 180) {
+            return scaledCoords;
+        }
+    }
+    return null;
+}
+
+// Try coordinate swapping transformation
+function trySwapTransform(coordinates) {
+    const swappedCoords = coordinates.map(coord => [coord[1], coord[0]]);
+    const firstSwapped = swappedCoords[0];
+    
+    if (Math.abs(firstSwapped[0]) <= 90 && Math.abs(firstSwapped[1]) <= 180) {
+        return swappedCoords;
+    }
+    return null;
+}
+
+// Try offset correction transformation
+function tryOffsetTransform(coordinates) {
+    const offsets = [10000000, 1000000, 100000, 10000, 1000];
+    
+    for (const offset of offsets) {
+        const offsetCoords = coordinates.map(coord => [
+            coord[0] - offset,
+            coord[1] - offset
+        ]);
+        
+        const firstOffset = offsetCoords[0];
+        if (Math.abs(firstOffset[0]) <= 90 && Math.abs(firstOffset[1]) <= 180) {
+            return offsetCoords;
+        }
+    }
+    return null;
+}
+
+// Try mixed transformation (scaling + swapping)
+function tryMixedTransform(coordinates) {
+    const scaleFactors = [1000000, 100000, 10000, 1000];
+    
+    for (const scale of scaleFactors) {
+        // Try scaling then swapping
+        const scaledCoords = coordinates.map(coord => [
+            coord[0] / scale,
+            coord[1] / scale
+        ]);
+        
+        const swappedScaledCoords = scaledCoords.map(coord => [coord[1], coord[0]]);
+        const firstSwappedScaled = swappedScaledCoords[0];
+        
+        if (Math.abs(firstSwappedScaled[0]) <= 90 && Math.abs(firstSwappedScaled[1]) <= 180) {
+            return swappedScaledCoords;
+        }
+    }
+    return null;
 }
 
 // Function to attempt UTM to WGS84 conversion
 function tryConvertUTMCoordinates(coordinates) {
     try {
-        // Check if coordinates look like UTM Zone 32N (common for Nigeria)
         const firstCoord = coordinates[0];
         const x = firstCoord[0]; // UTM Easting
         const y = firstCoord[1]; // UTM Northing
         
-        // UTM Zone 32N bounds for Nigeria
-        const minEasting = 200000;
-        const maxEasting = 800000;
-        const minNorthing = 500000;
-        const maxNorthing = 1200000;
+        console.log('Checking UTM coordinates:', { x, y });
         
-        if (x >= minEasting && x <= maxEasting && y >= minNorthing && y <= maxNorthing) {
-            console.log('Detected UTM Zone 32N coordinates, attempting conversion...');
+        // Check for UTM coordinates (typically large numbers)
+        if (Math.abs(x) > 100000 && Math.abs(y) > 100000) {
+            console.log('Detected potential UTM coordinates, attempting conversion...');
             
-            // Convert UTM Zone 32N to WGS84
-            const convertedCoords = coordinates.map(coord => {
-                const utmX = coord[0];
-                const utmY = coord[1];
-                
-                // UTM Zone 32N to WGS84 conversion
-                const zone = 32;
-                const falseEasting = 500000;
-                const falseNorthing = 0;
-                const scaleFactor = 0.9996;
-                const a = 6378137; // WGS84 semi-major axis
-                const e2 = 0.00669438; // WGS84 first eccentricity squared
-                
-                // Remove false easting and northing
-                const x = utmX - falseEasting;
-                const y = utmY - falseNorthing;
-                
-                // Calculate central meridian
-                const centralMeridian = (zone - 1) * 6 - 180 + 3;
-                
-                // Calculate latitude
-                const mu = y / (a * scaleFactor * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
-                const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
-                
-                const lat1 = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) +
-                             (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu) +
-                             (151*e1*e1*e1/96) * Math.sin(6*mu);
-                
-                // Calculate longitude
-                const lng = centralMeridian + Math.atan2(x, a * scaleFactor * (1 - e2*Math.sin(lat1)*Math.sin(lat1)) * Math.cos(lat1));
-                
-                return [lat1 * 180 / Math.PI, lng * 180 / Math.PI];
-            });
+            // Try different UTM zones (common ones for different regions)
+            const utmZones = [
+                { zone: 32, centralMeridian: 9 },   // Nigeria, West Africa
+                { zone: 31, centralMeridian: 3 },   // West Africa
+                { zone: 33, centralMeridian: 15 },  // East Africa
+                { zone: 18, centralMeridian: -75 }, // Eastern US
+                { zone: 19, centralMeridian: -69 }, // Eastern US
+                { zone: 10, centralMeridian: -123 }, // Western US
+                { zone: 11, centralMeridian: -117 }, // Western US
+            ];
             
-            // Validate converted coordinates
-            const firstConverted = convertedCoords[0];
-            if (Math.abs(firstConverted[0]) <= 90 && Math.abs(firstConverted[1]) <= 180) {
-                console.log('UTM conversion successful:', firstConverted);
-                return convertedCoords;
+            for (const utmZone of utmZones) {
+                const convertedCoords = convertUTMToWGS84(coordinates, utmZone.zone, utmZone.centralMeridian);
+                if (convertedCoords) {
+                    console.log(`UTM Zone ${utmZone.zone} conversion successful:`, convertedCoords[0]);
+                    return convertedCoords;
+                }
             }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('UTM conversion failed:', error);
+        return null;
+    }
+}
+
+// Improved UTM to WGS84 conversion function
+function convertUTMToWGS84(coordinates, zone, centralMeridian) {
+    try {
+        const convertedCoords = coordinates.map(coord => {
+            const utmX = coord[0];
+            const utmY = coord[1];
+            
+            // UTM parameters
+            const falseEasting = 500000;
+            const falseNorthing = 0;
+            const scaleFactor = 0.9996;
+            const a = 6378137; // WGS84 semi-major axis
+            const e2 = 0.00669438; // WGS84 first eccentricity squared
+            
+            // Remove false easting and northing
+            const x = utmX - falseEasting;
+            const y = utmY - falseNorthing;
+            
+            // Calculate latitude using inverse UTM formulas
+            const mu = y / (a * scaleFactor * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+            const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+            
+            const lat1 = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) +
+                         (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu) +
+                         (151*e1*e1*e1/96) * Math.sin(6*mu);
+            
+            // Calculate longitude
+            const lng = centralMeridian + Math.atan2(x, a * scaleFactor * (1 - e2*Math.sin(lat1)*Math.sin(lat1)) * Math.cos(lat1));
+            
+            const lat = lat1 * 180 / Math.PI;
+            const lngDeg = lng * 180 / Math.PI;
+            
+            return [lat, lngDeg];
+        });
+        
+        // Validate converted coordinates
+        const firstConverted = convertedCoords[0];
+        if (Math.abs(firstConverted[0]) <= 90 && Math.abs(firstConverted[1]) <= 180) {
+            return convertedCoords;
         }
         
         return null;
@@ -2570,7 +2718,9 @@ function showCoordinateSystemHelp() {
 }
 
 function displayUploadedData(data, fileName) {
-    console.log('Processing uploaded data:', data); // Debug log
+    console.log('=== AOI UPLOAD DEBUG ===');
+    console.log('Processing uploaded data:', data);
+    console.log('File name:', fileName);
     
     if (!data) {
         showNotification(`No valid geometry found in ${fileName}`, 'warning');
@@ -2585,48 +2735,75 @@ function displayUploadedData(data, fileName) {
     // Handle different data structures
     if (data.type === 'Polygon') {
         coordinates = data.coordinates[0];
+        console.log('Data type: Polygon');
     } else if (data.type === 'LineString') {
         coordinates = data.coordinates;
+        console.log('Data type: LineString');
     } else if (data.type === 'FeatureCollection') {
+        console.log('Data type: FeatureCollection');
         // Handle multiple features
         if (data.features && data.features.length > 0) {
             const firstFeature = data.features[0];
+            console.log('First feature:', firstFeature);
             if (firstFeature.geometry) {
                 if (firstFeature.geometry.type === 'Polygon') {
                     coordinates = firstFeature.geometry.coordinates[0];
+                    console.log('Feature geometry type: Polygon');
                 } else if (firstFeature.geometry.type === 'LineString') {
                     coordinates = firstFeature.geometry.coordinates;
+                    console.log('Feature geometry type: LineString');
                 }
             }
         }
     } else if (data.geometry) {
+        console.log('Data type: Feature with geometry');
         // Handle GeoJSON Feature
         if (data.geometry.type === 'Polygon') {
             coordinates = data.geometry.coordinates[0];
+            console.log('Geometry type: Polygon');
         } else if (data.geometry.type === 'LineString') {
             coordinates = data.geometry.coordinates;
+            console.log('Geometry type: LineString');
         }
     } else if (Array.isArray(data)) {
+        console.log('Data type: Direct coordinate array');
         // Handle direct coordinate array
         coordinates = data;
     }
     
-    console.log('Extracted coordinates:', coordinates); // Debug log
+    console.log('Extracted coordinates count:', coordinates ? coordinates.length : 0);
+    console.log('First coordinate:', coordinates ? coordinates[0] : 'none');
+    console.log('Last coordinate:', coordinates ? coordinates[coordinates.length - 1] : 'none');
+    
+    if (coordinates && coordinates.length > 0) {
+        const coordRange = {
+            minLat: Math.min(...coordinates.map(c => c[0])),
+            maxLat: Math.max(...coordinates.map(c => c[0])),
+            minLng: Math.min(...coordinates.map(c => c[1])),
+            maxLng: Math.max(...coordinates.map(c => c[1]))
+        };
+        console.log('Coordinate ranges:', coordRange);
+    }
     
     // Validate and fix coordinates
     if (coordinates && coordinates.length > 0) {
+        console.log('=== COORDINATE VALIDATION ===');
+        console.log('Starting coordinate validation...');
+        
         const validatedCoordinates = validateAndFixCoordinates(coordinates);
         
         if (validatedCoordinates === null) {
+            console.log('Standard validation failed, attempting aggressive correction...');
             // Try one more aggressive approach - force display with warning
-            console.log('Attempting aggressive coordinate correction...');
             const aggressiveCoords = tryAggressiveCorrection(coordinates);
             
             if (aggressiveCoords) {
                 console.log('Aggressive correction successful');
+                console.log('Aggressive correction result:', aggressiveCoords[0]);
                 showNotification('Coordinates were corrected using aggressive method. The shape has been preserved but location may need verification.', 'warning');
                 coordinates = aggressiveCoords;
             } else {
+                console.log('All coordinate correction methods failed');
                 // Coordinates are invalid and cannot be displayed
                 showNotification('Cannot display uploaded data: Invalid coordinate system detected. Please convert to WGS84 latitude/longitude.', 'error');
                 
@@ -2638,24 +2815,13 @@ function displayUploadedData(data, fileName) {
                 return;
             }
         } else {
+            console.log('Standard validation successful');
             coordinates = validatedCoordinates;
         }
         
         const firstCoord = coordinates[0];
-        console.log('First coordinate after validation:', firstCoord);
-        
-        // Check if coordinates seem reasonable for the current map view
-        const lat = firstCoord[0];
-        const lng = firstCoord[1];
-        const mapCenter = map.getCenter();
-        const distanceFromCenter = Math.sqrt(
-            Math.pow(lat - mapCenter.lat, 2) + Math.pow(lng - mapCenter.lng, 2)
-        );
-        
-        if (distanceFromCenter > 10) { // More than 10 degrees from map center
-            console.warn('Coordinates seem far from current map view:', { lat, lng, mapCenter });
-            showNotification('Warning: Uploaded coordinates appear to be far from the current map view. Please verify the coordinate system.', 'warning');
-        }
+        console.log('Final coordinates after validation:', firstCoord);
+        console.log('Coordinate validation complete');
     }
     
     if (coordinates && coordinates.length >= 3) {
@@ -2670,31 +2836,6 @@ function displayUploadedData(data, fileName) {
             weight: 3,
             opacity: 0.8
         }).addTo(drawnItems);
-        
-        // Add markers for each point
-        coordinates.forEach((point, index) => {
-            L.marker(point, {
-                icon: L.divIcon({
-                    className: 'custom-marker',
-                    html: `<div style="
-                        background: var(--primary-500);
-                        color: white;
-                        border-radius: 50%;
-                        width: 24px;
-                        height: 24px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 12px;
-                        font-weight: bold;
-                        border: 2px solid white;
-                        box-shadow: var(--shadow-lg);
-                    ">${index + 1}</div>`,
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
-                })
-            }).addTo(drawnItems);
-        });
         
         // Calculate area and perimeter
         const area = calculatePolygonArea(coordinates);
@@ -3759,6 +3900,24 @@ function checkUrlParams() {
                 const analysisPanel = document.getElementById('analysisPanel');
                 if (analysisPanel) {
                     analysisPanel.classList.add('active');
+                    // Check if panel has scrollable content and add scroll listener
+                    setTimeout(() => {
+                        if (analysisPanel.scrollHeight > analysisPanel.clientHeight) {
+                            analysisPanel.classList.add('scrollable');
+                            
+                            // Add scroll listener to show/hide gradient fade with throttling
+                            const updateScrollIndicator = throttle(() => {
+                                const isAtBottom = analysisPanel.scrollTop + analysisPanel.clientHeight >= analysisPanel.scrollHeight - 10;
+                                if (isAtBottom) {
+                                    analysisPanel.classList.remove('scrollable');
+                                } else {
+                                    analysisPanel.classList.add('scrollable');
+                                }
+                            }, 16); // ~60fps
+                            
+                            analysisPanel.addEventListener('scroll', updateScrollIndicator);
+                        }
+                    }, 100);
                 }
             }
         }, 500);
