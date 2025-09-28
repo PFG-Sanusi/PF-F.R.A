@@ -1885,6 +1885,7 @@ function processFile(file, callback) {
             }
         } catch (error) {
             console.error('Error processing file:', error);
+            console.error('File content preview:', e.target.result.substring(0, 200));
             showNotification(`Error processing ${file.name}: ${error.message}`, 'error');
             callback(false, null);
         }
@@ -1903,6 +1904,13 @@ function parseKML(kmlText) {
     const parser = new DOMParser();
     const kmlDoc = parser.parseFromString(kmlText, 'text/xml');
     
+    // Check for parsing errors
+    const parseError = kmlDoc.querySelector('parsererror');
+    if (parseError) {
+        console.error('KML parsing error:', parseError.textContent);
+        return null;
+    }
+    
     const coordinates = [];
     const placemarks = kmlDoc.querySelectorAll('Placemark');
     
@@ -1917,10 +1925,10 @@ function parseKML(kmlText) {
                 coordPairs.forEach(pair => {
                     const parts = pair.split(',');
                     if (parts.length >= 2) {
-                        const lng = parseFloat(parts[0]);
-                        const lat = parseFloat(parts[1]);
+                        const lng = parseFloat(parts[0]); // KML: longitude first
+                        const lat = parseFloat(parts[1]); // KML: latitude second
                         if (!isNaN(lat) && !isNaN(lng)) {
-                            coordinates.push([lat, lng]);
+                            coordinates.push([lat, lng]); // Leaflet expects [lat, lng]
                         }
                     }
                 });
@@ -1936,10 +1944,10 @@ function parseKML(kmlText) {
                     coordPairs.forEach(pair => {
                         const parts = pair.split(',');
                         if (parts.length >= 2) {
-                            const lng = parseFloat(parts[0]);
-                            const lat = parseFloat(parts[1]);
+                            const lng = parseFloat(parts[0]); // KML: longitude first
+                            const lat = parseFloat(parts[1]); // KML: latitude second
                             if (!isNaN(lat) && !isNaN(lng)) {
-                                coordinates.push([lat, lng]);
+                                coordinates.push([lat, lng]); // Leaflet expects [lat, lng]
                             }
                         }
                     });
@@ -1989,6 +1997,38 @@ function parseGPX(gpxText) {
     return null;
 }
 
+// Function to detect and fix common coordinate system issues
+function validateAndFixCoordinates(coordinates) {
+    if (!coordinates || coordinates.length === 0) return coordinates;
+    
+    const firstCoord = coordinates[0];
+    const lat = firstCoord[0];
+    const lng = firstCoord[1];
+    
+    // Check if coordinates might be swapped (common issue)
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        console.warn('Coordinates appear to be out of valid ranges, checking for coordinate swap...');
+        
+        // Try swapping coordinates
+        const swappedCoords = coordinates.map(coord => [coord[1], coord[0]]);
+        const swappedFirst = swappedCoords[0];
+        
+        if (Math.abs(swappedFirst[0]) <= 90 && Math.abs(swappedFirst[1]) <= 180) {
+            console.log('Coordinates were swapped, correcting...');
+            showNotification('Coordinates were automatically corrected (lat/lng were swapped)', 'info');
+            return swappedCoords;
+        }
+    }
+    
+    // Check if coordinates might be in a different projection (UTM, etc.)
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        console.warn('Coordinates appear to be in a different projection system');
+        showNotification('Warning: Coordinates appear to be in a different projection system (not WGS84). Please convert to WGS84 latitude/longitude.', 'warning');
+    }
+    
+    return coordinates;
+}
+
 function displayUploadedData(data, fileName) {
     console.log('Processing uploaded data:', data); // Debug log
     
@@ -2032,6 +2072,27 @@ function displayUploadedData(data, fileName) {
     }
     
     console.log('Extracted coordinates:', coordinates); // Debug log
+    
+    // Validate and fix coordinates
+    if (coordinates && coordinates.length > 0) {
+        coordinates = validateAndFixCoordinates(coordinates);
+        
+        const firstCoord = coordinates[0];
+        console.log('First coordinate after validation:', firstCoord);
+        
+        // Check if coordinates seem reasonable for the current map view
+        const lat = firstCoord[0];
+        const lng = firstCoord[1];
+        const mapCenter = map.getCenter();
+        const distanceFromCenter = Math.sqrt(
+            Math.pow(lat - mapCenter.lat, 2) + Math.pow(lng - mapCenter.lng, 2)
+        );
+        
+        if (distanceFromCenter > 10) { // More than 10 degrees from map center
+            console.warn('Coordinates seem far from current map view:', { lat, lng, mapCenter });
+            showNotification('Warning: Uploaded coordinates appear to be far from the current map view. Please verify the coordinate system.', 'warning');
+        }
+    }
     
     if (coordinates && coordinates.length >= 3) {
         // Set polygon points
