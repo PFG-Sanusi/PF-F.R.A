@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AOI Tool - Interactive Flood Risk Map | PF-FRA</title>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Use PF-FRA's interactive AOI (Area of Interest) tool to analyze flood risks, create custom maps, and assess flood vulnerability in real-time using satellite imagery.">
+    <meta name="keywords" content="AOI tool, flood risk map, interactive map, flood analysis, satellite imagery, flood vulnerability, area of interest mapping">
+    <meta name="author" content="Proforce Galaxies">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="AOI Tool - Interactive Flood Risk Map">
+    <meta property="og:description" content="Interactive flood risk assessment tool with real-time mapping capabilities and satellite imagery integration.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://pf-fra.proforcegalaxies.com/map">
+    <meta property="og:image" content="https://pf-fra.proforcegalaxies.com/images/map-og.jpg">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://pf-fra.proforcegalaxies.com/map">
+    
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "PF-FRA AOI Tool",
+        "description": "Interactive flood risk assessment tool with mapping capabilities",
+        "url": "https://pf-fra.proforcegalaxies.com/map",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web Browser",
+        "featureList": [
+            "Interactive mapping",
+            "Real-time flood risk assessment",
+            "AOI (Area of Interest) creation",
+            "Satellite imagery integration",
+            "Flood vulnerability analysis",
+            "Data export capabilities"
+        ],
+        "provider": {
+            "@type": "Organization",
+            "name": "Proforce Galaxies"
+        }
+    }
+    </script>
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="manifest" href="site.webmanifest">
+    
+    <!-- Performance optimizations -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="map-styles.css">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="map-script.js" as="script">
+    <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" as="script">
+    <link rel="dns-prefetch" href="//unpkg.com">
+    <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="//fonts.googleapis.com">
+    <link rel="dns-prefetch" href="//fonts.gstatic.com">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="animated-bg">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+        <div class="particles"></div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="brand-logo">
+                    <div class="logo-icon">
+                        <svg width="40" height="40" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <!-- Gradients for realistic water -->
+                                <linearGradient id="waterDeep" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#1e3a8a;stop-opacity:1" />
+                                    <stop offset="50%" style="stop-color:#1e40af;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#1e3a8a;stop-opacity:1" />
+                                </linearGradient>
+                                
+                                <linearGradient id="waterLight" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.9" />
+                                    <stop offset="50%" style="stop-color:#60a5fa;stop-opacity:0.8" />
+                                    <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0.9" />
+                                </linearGradient>
+                                
+                                <linearGradient id="foam" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:#e0f2fe;stop-opacity:0.6" />
+                                    <stop offset="50%" style="stop-color:#ffffff;stop-opacity:0.9" />
+                                    <stop offset="100%" style="stop-color:#e0f2fe;stop-opacity:0.6" />
+                                </linearGradient>
+                                
+                                <radialGradient id="highlight" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.4" />
+                                    <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+                                </radialGradient>
+
+                                <!-- Shadow filter -->
+                                <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                                    <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+                                    <feOffset dx="0" dy="2" result="offsetblur"/>
+                                    <feComponentTransfer>
+                                        <feFuncA type="linear" slope="0.3"/>
+                                    </feComponentTransfer>
+                                    <feMerge>
+                                        <feMergeNode/>
+                                        <feMergeNode in="SourceGraphic"/>
+                                    </feMerge>
+                                </filter>
+                            </defs>
+
+                            <!-- Background circle -->
+                            <circle cx="200" cy="200" r="190" fill="#0c4a6e" opacity="0.1"/>
+                            
+                            <!-- Main water body - deep layer with subtle movement -->
+                            <ellipse cx="200" cy="280" rx="160" ry="100" fill="url(#waterDeep)" opacity="0.8">
+                                <animate attributeName="ry" values="100;105;100" dur="4s" repeatCount="indefinite"/>
+                            </ellipse>
+                            
+                            <!-- Large wave 1 - back with slow rolling motion -->
+                            <path d="M 50 220 Q 80 200, 110 210 T 170 220 Q 200 230, 230 220 T 290 200 Q 320 190, 350 200 L 350 350 L 50 350 Z" 
+                                  fill="url(#waterDeep)" opacity="0.7">
+                                <animate attributeName="d" 
+                                         values="M 50 220 Q 80 200, 110 210 T 170 220 Q 200 230, 230 220 T 290 200 Q 320 190, 350 200 L 350 350 L 50 350 Z;
+                                                 M 50 225 Q 80 205, 110 215 T 170 225 Q 200 235, 230 225 T 290 205 Q 320 195, 350 205 L 350 350 L 50 350 Z;
+                                                 M 50 220 Q 80 200, 110 210 T 170 220 Q 200 230, 230 220 T 290 200 Q 320 190, 350 200 L 350 350 L 50 350 Z" 
+                                         dur="3s" repeatCount="indefinite"/>
+                            </path>
+                            
+                            <!-- Large wave 2 - middle with undulating motion -->
+                            <path d="M 40 250 Q 70 230, 100 240 T 160 250 Q 190 260, 220 250 T 280 235 Q 315 225, 360 240 L 360 350 L 40 350 Z" 
+                                  fill="url(#waterLight)" filter="url(#shadow)">
+                                <animate attributeName="d" 
+                                         values="M 40 250 Q 70 230, 100 240 T 160 250 Q 190 260, 220 250 T 280 235 Q 315 225, 360 240 L 360 350 L 40 350 Z;
+                                                 M 40 245 Q 70 235, 100 245 T 160 245 Q 190 255, 220 245 T 280 240 Q 315 230, 360 245 L 360 350 L 40 350 Z;
+                                                 M 40 250 Q 70 240, 100 250 T 160 250 Q 190 260, 220 250 T 280 245 Q 315 235, 360 250 L 360 350 L 40 350 Z;
+                                                 M 40 245 Q 70 235, 100 245 T 160 245 Q 190 255, 220 245 T 280 240 Q 315 230, 360 245 L 360 350 L 40 350 Z;
+                                                 M 40 250 Q 70 230, 100 240 T 160 250 Q 190 260, 220 250 T 280 235 Q 315 225, 360 240 L 360 350 L 40 350 Z" 
+                                         dur="4s" repeatCount="indefinite"/>
+                            </path>
+                            
+                            <!-- Wave details and foam with movement -->
+                            <path d="M 100 240 Q 130 235, 160 242" 
+                                  stroke="url(#foam)" stroke-width="3" fill="none" opacity="0.7" stroke-linecap="round">
+                                <animate attributeName="d" 
+                                         values="M 100 240 Q 130 235, 160 242;
+                                                 M 100 238 Q 130 233, 160 240;
+                                                 M 100 240 Q 130 235, 160 242" 
+                                         dur="2s" repeatCount="indefinite"/>
+                                <animate attributeName="opacity" values="0.7;0.5;0.7" dur="2s" repeatCount="indefinite"/>
+                            </path>
+                            <path d="M 220 250 Q 250 245, 280 252" 
+                                  stroke="url(#foam)" stroke-width="3" fill="none" opacity="0.7" stroke-linecap="round">
+                                <animate attributeName="d" 
+                                         values="M 220 250 Q 250 245, 280 252;
+                                                 M 220 248 Q 250 243, 280 250;
+                                                 M 220 250 Q 250 245, 280 252" 
+                                         dur="2.5s" repeatCount="indefinite"/>
+                                <animate attributeName="opacity" values="0.7;0.5;0.7" dur="2.5s" repeatCount="indefinite"/>
+                            </path>
+                            
+                            <!-- Front wave with crest - dynamic movement -->
+                            <path d="M 30 280 Q 60 265, 90 275 Q 120 285, 150 275 Q 180 265, 210 280 Q 240 295, 270 280 Q 300 265, 330 275 Q 350 280, 370 275 L 370 350 L 30 350 Z" 
+                                  fill="#2563eb" opacity="0.9" filter="url(#shadow)">
+                                <animate attributeName="d" 
+                                         values="M 30 280 Q 60 265, 90 275 Q 120 285, 150 275 Q 180 265, 210 280 Q 240 295, 270 280 Q 300 265, 330 275 Q 350 280, 370 275 L 370 350 L 30 350 Z;
+                                                 M 30 275 Q 60 270, 90 280 Q 120 280, 150 270 Q 180 270, 210 285 Q 240 290, 270 275 Q 300 270, 330 280 Q 350 275, 370 270 L 370 350 L 30 350 Z;
+                                                 M 30 278 Q 60 268, 90 278 Q 120 288, 150 278 Q 180 268, 210 283 Q 240 298, 270 283 Q 300 268, 330 278 Q 350 283, 370 278 L 370 350 L 30 350 Z;
+                                                 M 30 280 Q 60 265, 90 275 Q 120 285, 150 275 Q 180 265, 210 280 Q 240 295, 270 280 Q 300 265, 330 275 Q 350 280, 370 275 L 370 350 L 30 350 Z" 
+                                         dur="3.5s" repeatCount="indefinite"/>
+                            </path>
+                            
+                            <!-- Wave highlights for realism with pulsing -->
+                            <ellipse cx="150" cy="275" rx="40" ry="15" fill="url(#highlight)">
+                                <animate attributeName="opacity" values="1;0.6;1" dur="3s" repeatCount="indefinite"/>
+                                <animate attributeName="cy" values="275;273;275" dur="3s" repeatCount="indefinite"/>
+                            </ellipse>
+                            <ellipse cx="270" cy="280" rx="35" ry="12" fill="url(#highlight)">
+                                <animate attributeName="opacity" values="1;0.6;1" dur="2.5s" repeatCount="indefinite"/>
+                                <animate attributeName="cy" values="280;278;280" dur="2.5s" repeatCount="indefinite"/>
+                            </ellipse>
+                            
+                            <!-- Foam details on crest with bobbing animation -->
+                            <g>
+                                <circle cx="90" cy="275" r="4" fill="#ffffff" opacity="0.8">
+                                    <animate attributeName="cy" values="275;273;277;275" dur="2s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.8;0.5;0.8" dur="2s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="95" cy="273" r="3" fill="#ffffff" opacity="0.7">
+                                    <animate attributeName="cy" values="273;271;274;273" dur="1.8s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="150" cy="275" r="5" fill="#ffffff" opacity="0.8">
+                                    <animate attributeName="cy" values="275;272;276;275" dur="2.2s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.8;0.6;0.8" dur="2.2s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="157" cy="274" r="3" fill="#ffffff" opacity="0.6">
+                                    <animate attributeName="cy" values="274;272;275;274" dur="1.9s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="270" cy="280" r="4" fill="#ffffff" opacity="0.8">
+                                    <animate attributeName="cy" values="280;278;282;280" dur="2.1s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.8;0.5;0.8" dur="2.1s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="276" cy="279" r="3" fill="#ffffff" opacity="0.7">
+                                    <animate attributeName="cy" values="279;277;280;279" dur="1.7s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="330" cy="275" r="4" fill="#ffffff" opacity="0.7">
+                                    <animate attributeName="cy" values="275;273;277;275" dur="2.3s" repeatCount="indefinite"/>
+                                </circle>
+                            </g>
+                            
+                            <!-- Splash droplets with falling animation -->
+                            <g>
+                                <circle cx="120" cy="260" r="2.5" fill="#60a5fa" opacity="0.6">
+                                    <animate attributeName="cy" values="260;270;260" dur="2s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="180" cy="255" r="2" fill="#60a5fa" opacity="0.5">
+                                    <animate attributeName="cy" values="255;265;255" dur="2.5s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.5;0;0.5" dur="2.5s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="240" cy="258" r="2.5" fill="#60a5fa" opacity="0.6">
+                                    <animate attributeName="cy" values="258;268;258" dur="2.2s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.6;0;0.6" dur="2.2s" repeatCount="indefinite"/>
+                                </circle>
+                                <circle cx="290" cy="253" r="2" fill="#60a5fa" opacity="0.5">
+                                    <animate attributeName="cy" values="253;263;253" dur="2.8s" repeatCount="indefinite"/>
+                                    <animate attributeName="opacity" values="0.5;0;0.5" dur="2.8s" repeatCount="indefinite"/>
+                                </circle>
+                            </g>
+                            
+                            <!-- Alert/Assessment symbol with subtle pulse -->
+                            <g transform="translate(200, 120)">
+                                <!-- Warning triangle background -->
+                                <path d="M 0 -50 L 43 25 L -43 25 Z" fill="#dc2626" opacity="0.9" filter="url(#shadow)">
+                                    <animateTransform attributeName="transform" type="scale" 
+                                                      values="1;1.05;1" dur="2s" repeatCount="indefinite" 
+                                                      additive="sum" attributeType="XML"/>
+                                </path>
+                                <path d="M 0 -45 L 39 22 L -39 22 Z" fill="#ef4444" opacity="0.95">
+                                    <animateTransform attributeName="transform" type="scale" 
+                                                      values="1;1.05;1" dur="2s" repeatCount="indefinite" 
+                                                      additive="sum" attributeType="XML"/>
+                                </path>
+                                
+                                <!-- Inner gauge circle -->
+                                <circle cx="0" cy="0" r="28" fill="#ffffff" opacity="0.95"/>
+                                <circle cx="0" cy="0" r="25" fill="#1e293b" opacity="0.1"/>
+                                
+                                <!-- Gauge arc -->
+                                <path d="M -18 8 A 20 20 0 0 1 18 8" 
+                                      stroke="#3b82f6" stroke-width="4" fill="none" stroke-linecap="round"/>
+                                
+                                <!-- Gauge needle with swinging animation -->
+                                <g>
+                                    <animateTransform attributeName="transform" type="rotate" 
+                                                      values="0;15;-10;0" dur="4s" repeatCount="indefinite" 
+                                                      additive="sum" attributeType="XML"/>
+                                    <line x1="0" y1="0" x2="12" y2="-8" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round"/>
+                                    <circle cx="0" cy="0" r="3" fill="#dc2626"/>
+                                </g>
+                                
+                                <!-- Exclamation mark with pulse -->
+                                <g>
+                                    <animate attributeName="opacity" values="1;0.7;1" dur="1.5s" repeatCount="indefinite"/>
+                                    <rect x="-2" y="-18" width="4" height="12" rx="2" fill="#dc2626"/>
+                                    <circle cx="0" cy="-3" r="2.5" fill="#dc2626"/>
+                                </g>
+                            </g>
+                            
+                            <!-- Additional water texture with subtle movement -->
+                            <path d="M 60 285 Q 90 283, 120 287" 
+                                  stroke="#1e40af" stroke-width="1.5" fill="none" opacity="0.3">
+                                <animate attributeName="d" 
+                                         values="M 60 285 Q 90 283, 120 287;
+                                                 M 60 283 Q 90 285, 120 285;
+                                                 M 60 285 Q 90 283, 120 287" 
+                                         dur="3s" repeatCount="indefinite"/>
+                            </path>
+                            <path d="M 200 292 Q 230 290, 260 294" 
+                                  stroke="#1e40af" stroke-width="1.5" fill="none" opacity="0.3">
+                                <animate attributeName="d" 
+                                         values="M 200 292 Q 230 290, 260 294;
+                                                 M 200 290 Q 230 292, 260 292;
+                                                 M 200 292 Q 230 290, 260 294" 
+                                         dur="3.5s" repeatCount="indefinite"/>
+                            </path>
+                        </svg>
+                    </div>
+                    <span class="brand-text">PF-FRA</span>
+                </div>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="index.html" class="nav-link">
+                    <span class="nav-icon"><i class="fas fa-home"></i></span>
+                    <span class="nav-text">Home</span>
+                </a>
+                <a href="services.html" class="nav-link">
+                    <span class="nav-icon"><i class="fas fa-cogs"></i></span>
+                    <span class="nav-text">Services</span>
+                </a>
+                <a href="map.html" class="nav-link active">
+                    <span class="nav-icon"><i class="fas fa-map"></i></span>
+                    <span class="nav-text">AOI Tool</span>
+                </a>
+                <a href="contact.html" class="nav-link">
+                    <span class="nav-icon"><i class="fas fa-envelope"></i></span>
+                    <span class="nav-text">Contact</span>
+                </a>
+            </div>
+            
+            <div class="nav-actions" id="navActions">
+                <button class="btn-ghost" id="loginBtn" style="display: none;">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Sign In</span>
+                </button>
+                <button class="btn-ghost" id="registerBtn" style="display: none;">
+                    <i class="fas fa-user-plus"></i>
+                    <span>Register</span>
+                </button>
+                <div class="user-menu" id="userMenu" style="display: none;">
+                    <button class="user-profile" id="userProfile">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="userName">User</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="user-dropdown" id="userDropdown">
+                        <a href="#" class="dropdown-item">
+                            <i class="fas fa-user"></i>
+                            <span>Profile</span>
+                        </a>
+                        <a href="#" class="dropdown-item" onclick="showUserDashboard(); return false;">
+                            <i class="fas fa-history"></i>
+                            <span>My Requests</span>
+                        </a>
+                        <a href="#" class="dropdown-item">
+                            <i class="fas fa-cog"></i>
+                            <span>Settings</span>
+                        </a>
+                        <div class="dropdown-divider"></div>
+                        <a href="#" class="dropdown-item" id="logoutBtn">
+                            <i class="fas fa-sign-out-alt"></i>
+                            <span>Logout</span>
+                        </a>
+                    </div>
+                </div>
+                <button class="btn-primary" id="getStartedBtn">
+                    <i class="fas fa-rocket"></i>
+                    <span>Get Started</span>
+                </button>
+            </div>
+            
+            <button class="mobile-toggle" id="mobileToggle">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Map Section -->
+    <section class="map-section">
+        <div class="container">
+            <!-- Header -->
+            <div class="map-header">
+                <div class="header-content">
+                    <div class="header-badge">
+                        <i class="fas fa-satellite"></i>
+                        <span>Live Satellite Imagery</span>
+                    </div>
+                    <h1 class="map-title">
+                        Area of Interest
+                        <span class="gradient-text">Request Tool</span>
+                    </h1>
+                    <p class="map-description">
+                        Draw your area of interest on the map (minimum 1 km²) and submit a request for professional 
+                        flood risk assessment analysis. Our experts will review your request and provide 
+                        detailed results via email within 2-5 business days.
+                    </p>
+                </div>
+                
+                <div class="header-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-draw-polygon"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalAreas">0</div>
+                            <div class="stat-label">Areas Drawn</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-chart-area"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalArea">0</div>
+                            <div class="stat-label">Total Area (km²)</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="lastUpdate">--</div>
+                            <div class="stat-label">Last Update</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map Container -->
+            <div class="map-container">
+                <!-- Control Panel -->
+                <div class="control-panel">
+                    <div class="panel-section">
+                        <h3 class="panel-title">
+                            <i class="fas fa-tools"></i>
+                            Drawing Tools
+                        </h3>
+                        <div class="tool-buttons">
+                            <button class="tool-btn active" id="drawPolygon">
+                                <i class="fas fa-draw-polygon"></i>
+                                <span>Draw Area</span>
+                            </button>
+                            <button class="tool-btn" id="editPolygon">
+                                <i class="fas fa-edit"></i>
+                                <span>Edit</span>
+                            </button>
+                            <button class="tool-btn" id="clearMap">
+                                <i class="fas fa-trash"></i>
+                                <span>Clear All</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="panel-section">
+                        <h3 class="panel-title">
+                            <i class="fas fa-layer-group"></i>
+                            Map Layers
+                        </h3>
+                        <div class="layer-controls">
+                            <label class="layer-option">
+                                <input type="radio" name="baseLayer" value="satellite-labels" checked>
+                                <span class="layer-name">
+                                    <i class="fas fa-satellite"></i>
+                                    Satellite with Labels
+                                </span>
+                            </label>
+                            <label class="layer-option">
+                                <input type="radio" name="baseLayer" value="satellite">
+                                <span class="layer-name">
+                                    <i class="fas fa-satellite-dish"></i>
+                                    Satellite Only
+                                </span>
+                            </label>
+                            <label class="layer-option">
+                                <input type="radio" name="baseLayer" value="street">
+                                <span class="layer-name">
+                                    <i class="fas fa-map"></i>
+                                    Street Map
+                                </span>
+                            </label>
+                            <label class="layer-option">
+                                <input type="radio" name="baseLayer" value="terrain">
+                                <span class="layer-name">
+                                    <i class="fas fa-mountain"></i>
+                                    Terrain
+                                </span>
+                            </label>
+                            <label class="layer-option">
+                                <input type="radio" name="baseLayer" value="osm">
+                                <span class="layer-name">
+                                    <i class="fas fa-map-marked-alt"></i>
+                                    OpenStreetMap
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="panel-section">
+                        <h3 class="panel-title">
+                            <i class="fas fa-upload"></i>
+                            Upload AOI
+                        </h3>
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-content">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p class="upload-text">Drop files here or click to browse</p>
+                                <p class="upload-formats">Supports: KML, GeoJSON, Shapefile, GPX (Max 10MB)</p>
+                                <input type="file" id="fileInput" accept=".kml,.geojson,.json,.gpx,.shp,.zip" multiple style="display: none;">
+                            </div>
+                            <div class="upload-progress">
+                                <div class="upload-progress-bar"></div>
+                            </div>
+                            <div class="upload-status"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="panel-section">
+                        <h3 class="panel-title">
+                            <i class="fas fa-database"></i>
+                            Data Management
+                        </h3>
+                        <div class="data-buttons">
+                            <button class="data-btn" id="saveArea">
+                                <i class="fas fa-save"></i>
+                                <span>Save Area</span>
+                            </button>
+                            <button class="data-btn" id="loadArea">
+                                <i class="fas fa-folder-open"></i>
+                                <span>Load Area</span>
+                            </button>
+                            <button class="data-btn" id="exportData">
+                                <i class="fas fa-download"></i>
+                                <span>Export</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map -->
+                <div class="map-wrapper">
+                    <div id="map"></div>
+                    
+                    <!-- Search Control -->
+                    <div class="search-control">
+                        <div class="search-input-container">
+                            <input type="text" id="searchInput" placeholder="Search for places..." class="search-input">
+                            <button id="searchBtn" class="search-btn">
+                                <i class="fas fa-search"></i>
+                            </button>
+                            <button id="clearSearchBtn" class="clear-search-btn" style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="searchResults" class="search-results" style="display: none;"></div>
+                    </div>
+                    
+                    <!-- Map Overlay -->
+                    <div class="map-overlay">
+                        <div class="overlay-content">
+                            <div class="drawing-status" id="drawingStatus">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Click "Draw Area" to start creating polygons</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Loading Indicator -->
+                        <div class="map-loading" id="mapLoading" style="display: none;">
+                            <div class="loading-spinner">
+                                <i class="fas fa-spinner fa-spin"></i>
+                            </div>
+                            <div class="loading-text">Loading map...</div>
+                        </div>
+                        
+                        <!-- Error Handling -->
+                        <div class="map-error" id="mapError" style="display: none;">
+                            <div class="error-content">
+                                <div class="error-icon">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                </div>
+                                <div class="error-message">
+                                    <h3>Map Loading Error</h3>
+                                    <p id="errorText">Unable to load the map. Please check your internet connection and try again.</p>
+                                </div>
+                                <div class="error-actions">
+                                    <button class="btn btn-primary" id="retryMap">
+                                        <i class="fas fa-redo"></i>
+                                        Retry
+                                    </button>
+                                    <button class="btn btn-secondary" id="offlineMode">
+                                        <i class="fas fa-wifi"></i>
+                                        Offline Mode
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Offline Mode Indicator -->
+                        <div class="offline-indicator" id="offlineIndicator" style="display: none;">
+                            <div class="offline-content">
+                                <i class="fas fa-wifi-slash"></i>
+                                <span>Offline Mode - Limited functionality</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Network Status Indicator -->
+                        <div class="network-status online" id="networkStatus" style="display: none;">
+                            <i class="fas fa-wifi"></i>
+                            <span>Online</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Panel -->
+                <div class="analysis-panel" id="analysisPanel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">
+                            <i class="fas fa-chart-line"></i>
+                            Area Analysis
+                        </h3>
+                        <button class="panel-close" id="closeAnalysis">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="analysis-content">
+                        <div class="analysis-metrics">
+                            <div class="metric-item">
+                                <div class="metric-label">Area Size</div>
+                                <div class="metric-value" id="areaValue">0.00 km²</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Perimeter</div>
+                                <div class="metric-value" id="perimeterValue">0.00 km</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Coordinates</div>
+                                <div class="metric-value" id="coordCount">0 points</div>
+                            </div>
+                            <div class="metric-item validation-item">
+                                <div class="metric-label">
+                                    Minimum Area (1 km²)
+                                    <i class="fas fa-info-circle" title="Minimum area required to submit a request"></i>
+                                </div>
+                                <div class="metric-value" id="validationStatus">
+                                    <i class="fas fa-times-circle" style="color: #ef4444;"></i>
+                                    <span>Not Met</span>
+                                </div>
+                            </div>
+                            <div class="metric-item price-item">
+                                <div class="metric-label">
+                                    Estimated Cost
+                                    <i class="fas fa-info-circle" title="Based on Area of Interest Analysis rate ($2,500/km²)"></i>
+                                </div>
+                                <div class="metric-value" id="livePrice">$0</div>
+                            </div>
+                        </div>
+                        
+                        
+                        <div class="analysis-actions">
+                            <button class="analysis-btn primary" id="submitRequest">
+                                <i class="fas fa-paper-plane"></i>
+                                <span>Submit Request</span>
+                            </button>
+                            <button class="analysis-btn secondary" id="saveDraft">
+                                <i class="fas fa-save"></i>
+                                <span>Save Draft</span>
+                            </button>
+                        </div>
+                        
+                        <div class="request-info" id="requestInfo">
+                            <div class="info-item">
+                                <div class="info-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="info-content">
+                                    <div class="info-label">Processing Time</div>
+                                    <div class="info-value">2-5 business days</div>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">
+                                    <i class="fas fa-envelope"></i>
+                                </div>
+                                <div class="info-content">
+                                    <div class="info-label">Results Delivery</div>
+                                    <div class="info-value">Email with detailed report</div>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">
+                                    <i class="fas fa-user-tie"></i>
+                                </div>
+                                <div class="info-content">
+                                    <div class="info-label">Expert Review</div>
+                                    <div class="info-value">Professional Analysis</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Instructions -->
+            <div class="instructions-panel">
+                <div class="instructions-header">
+                    <h3>
+                        <i class="fas fa-lightbulb"></i>
+                        How to Use the AOI Tool
+                    </h3>
+                    <button class="instructions-toggle" id="instructionsToggle">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+                <div class="instructions-content" id="instructionsContent">
+                    <div class="instruction-steps">
+                        <div class="step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h4>Select Drawing Tool</h4>
+                                <p>Click "Draw Area" to activate polygon drawing mode</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h4>Draw Your Area</h4>
+                                <p>Click on the map to create polygon points. Double-click to finish.</p>
+                                <div class="minimum-area-info">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span>Minimum area: 1 km² (100 hectares or 1,000,000 m²)</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h4>Submit Request</h4>
+                                <p>Click "Submit Request" to send your AOI for professional analysis. You'll receive a confirmation email with your request ID.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">4</div>
+                            <div class="step-content">
+                                <h4>Receive Results</h4>
+                                <p>Our experts will analyze your area and email you detailed results within 2-5 business days. No instant processing - all analyses are done by professionals.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="brand-logo">
+                        <div class="logo-icon">
+                            <i class="fas fa-water"></i>
+                        </div>
+                        <span class="brand-text">PF-FRA</span>
+                    </div>
+                    <p class="footer-description">
+                        Next-generation flood risk assessment platform powered by AI and advanced geospatial technology.
+                    </p>
+                    <div class="social-links">
+                        <a href="#" class="social-link">
+                            <i class="fab fa-linkedin"></i>
+                        </a>
+                        <a href="#" class="social-link">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        <a href="#" class="social-link">
+                            <i class="fab fa-github"></i>
+                        </a>
+                        <a href="#" class="social-link">
+                            <i class="fab fa-youtube"></i>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="footer-links">
+                    <div class="link-group">
+                        <h4>Product</h4>
+                        <a href="services.html">Features</a>
+                        <a href="map.html">AOI Tool</a>
+                        <a href="#">API</a>
+                        <a href="#">Integrations</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Company</h4>
+                        <a href="about.html">About</a>
+                        <a href="#">Careers</a>
+                        <a href="#">Press</a>
+                        <a href="#">Blog</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Support</h4>
+                        <a href="contact.html">Contact</a>
+                        <a href="#">Documentation</a>
+                        <a href="#">Help Center</a>
+                        <a href="#">Status</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Legal</h4>
+                        <a href="#">Privacy</a>
+                        <a href="#">Terms</a>
+                        <a href="#">Security</a>
+                        <a href="#">Compliance</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p>&copy; 2025 PF-FRA. All rights reserved.</p>
+                <div class="footer-bottom-links">
+                    <a href="#">Privacy Policy</a>
+                    <a href="#">Terms of Service</a>
+                    <a href="#">Cookie Settings</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Optimized script loading with error handling -->
+    <script>
+        // Error handling for Leaflet library loading
+        window.addEventListener('error', function(e) {
+            if (e.target.src && e.target.src.includes('leaflet')) {
+                console.error('Failed to load Leaflet library:', e);
+                document.getElementById('mapError').style.display = 'flex';
+                document.getElementById('errorText').textContent = 'Failed to load map library. Please check your internet connection and refresh the page.';
+            }
+        });
+        
+        // Check if Leaflet loaded successfully
+        window.addEventListener('load', function() {
+            if (typeof L === 'undefined') {
+                console.error('Leaflet library not loaded');
+                document.getElementById('mapError').style.display = 'flex';
+                document.getElementById('errorText').textContent = 'Map library failed to load. Please refresh the page.';
+            }
+        });
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer 
+            onerror="console.error('Leaflet library failed to load')"></script>
+    <script src="map-script.js" defer></script>
+    
+    <!-- Performance monitoring -->
+    <script>
+        // Performance monitoring
+        window.addEventListener('load', function() {
+            if ('performance' in window) {
+                const perfData = performance.getEntriesByType('navigation')[0];
+                console.log('Page load time:', perfData.loadEventEnd - perfData.loadEventStart, 'ms');
+            }
+        });
+    </script>
+</body>
+</html>
